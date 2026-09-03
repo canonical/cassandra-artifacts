@@ -1,0 +1,5 @@
+summary: nodetool reports the node Up/Normal, and cqlsh writes and reads it back
+
+execute: |
+  cd "$PROJECT_PATH"
+  just smoke

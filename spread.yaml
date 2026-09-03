@@ -1,0 +1,72 @@
+project: cassandra
+
+# "snapcraft test" packs the snap, allocates an instance through the backend
+# below, pushes this directory to it and runs the tasks under tests/spread/.
+# spread.yaml itself has to sit in the project root - snapcraft looks for it
+# there and nowhere else.
+backends:
+  craft:
+    # snapcraft fills in a backend of its own for one named "craft" that names
+    # no type, and the one it fills in looks for the script below in the
+    # project root, at spread/.extension. Naming the type keeps that
+    # substitution from happening, so the wiring it would have filled in is
+    # spelled out here instead, pointing at tests/spread/.
+    type: adhoc
+    # allocate and discard run on this machine, the rest inside the instance
+    allocate: ADDRESS $(./tests/spread/.extension allocate)
+    discard: ./tests/spread/.extension discard
+    prepare: '"$PROJECT_PATH"/tests/spread/.extension backend-prepare'
+    restore: '"$PROJECT_PATH"/tests/spread/.extension backend-restore'
+    prepare-each: '"$PROJECT_PATH"/tests/spread/.extension backend-prepare-each'
+    restore-each: '"$PROJECT_PATH"/tests/spread/.extension backend-restore-each'
+    systems:
+      # the base the snap is built on. The instance is a VM rather than a
+      # container because the tasks set vm.max_map_count, which is not
+      # namespaced and so cannot be written from an unprivileged container.
+      - ubuntu-26.04
+
+suites:
+  tests/spread/:
+    summary: Tests against an installed snap
+    prepare: |
+      # "just" runs the suites, and poetry installs what they import
+      apt-get install -y just python3-poetry
+
+      snap install "$CRAFT_ARTIFACT" --dangerous --jailmode
+
+      cd "$PROJECT_PATH"
+      just connect-interfaces
+      just sysctl-tuning
+
+      snap start cassandra.server
+
+      # An empty node takes a while to initialize the cluster before it reports
+      # itself Up/Normal, and the tests need a node that answers CQL.
+      for _ in $(seq 60); do
+          if snap run cassandra.cassandra-nodetool status | grep -q "UN"; then
+              ready=1
+              break
+          fi
+          echo "waiting for cassandra to be ready..."
+          sleep 5
+      done
+      if [ -z "${ready:-}" ]; then
+          echo "cassandra did not report itself Up/Normal" >&2
+          snap logs cassandra.server -n all >&2
+          exit 1
+      fi
+    restore: |
+      snap remove cassandra --purge --terminate
+
+# Everything here is pushed to the instance, so the build and test artifacts
+# are left behind - but not the packed snap, which is what $CRAFT_ARTIFACT
+# points at.
+exclude:
+  - .git
+  - .tox
+  - .pytest_cache
+  - parts
+  - stage
+  - prime
+
+kill-timeout: 1h
