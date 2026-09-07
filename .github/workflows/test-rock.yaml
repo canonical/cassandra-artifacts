@@ -15,7 +15,7 @@ env:
 
 jobs:
   test-rock:
-    name: Test rock
+    name: Rock smoke tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -24,7 +24,7 @@ jobs:
         run: sudo snap install rockcraft --classic
 
       - name: Download rock package(s)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: ${{ inputs.artifact-prefix }}-*
           merge-multiple: true
@@ -80,6 +80,7 @@ jobs:
 
       - name: Write and read through cqlsh
         run: |
+          sleep 30
           docker exec cassandra cqlsh -e "
             CREATE KEYSPACE test WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
             CREATE TABLE test.t1 (message text PRIMARY KEY);
@@ -131,6 +132,7 @@ jobs:
 
       - name: Write on one node and read it back on the other
         run: |
+          sleep 30
           docker exec cassandra2 cqlsh -e "
             CREATE KEYSPACE multitest WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 2};
             CREATE TABLE multitest.ttt (message text PRIMARY KEY);
