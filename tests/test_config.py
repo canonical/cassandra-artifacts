@@ -26,13 +26,12 @@ REPO = Path(__file__).resolve().parent.parent
 
 SNAP = "cassandra"
 SNAP_PATH = Path("/snap/cassandra/current")
-SNAP_DATA = Path("/var/snap/cassandra/current")
 SNAP_COMMON = Path("/var/snap/cassandra/common")
 
 RENDER_CONFIG = SNAP_PATH / "opt" / "shared" / "bin" / "render-config.sh"
 SHIPPED_CONF = SNAP_PATH / "etc" / "cassandra" / "cassandra.yaml"
-LIVE_CONF = SNAP_DATA / "etc" / "cassandra" / "cassandra.yaml"
-LIVE_STATE = SNAP_DATA / "ops" / "rendered-config.yaml"
+LIVE_CONF = SNAP_COMMON / "etc" / "cassandra" / "cassandra.yaml"
+LIVE_STATE = SNAP_COMMON / "ops" / "rendered-config.yaml"
 LIVE_LOG = SNAP_COMMON / "ops" / "snap" / "logs" / "hook-configure.log"
 
 # Values for the whole mapping. Never applied to a running node, so they only

@@ -82,24 +82,24 @@ sudo sysctl --system
 | Command | Upstream script |
 | --- | --- |
 | `cqlsh` | `cqlsh` |
-| `cassandra-debug-cql` | `debug-cql` |
-| `cassandra-nodetool` | `nodetool` |
-| `cassandra-sstableloader` | `sstableloader` |
-| `cassandra-sstablescrub` | `sstablescrub` |
-| `cassandra-sstableupgrade` | `sstableupgrade` |
-| `cassandra-sstableutil` | `sstableutil` |
-| `cassandra-sstableverify` | `sstableverify` |
+| `debug-cql` | `debug-cql` |
+| `nodetool` | `nodetool` |
+| `sstableloader` | `sstableloader` |
+| `sstablescrub` | `sstablescrub` |
+| `sstableupgrade` | `sstableupgrade` |
+| `sstableutil` | `sstableutil` |
+| `sstableverify` | `sstableverify` |
 
-Each of these is a snap app with a matching alias, so once the aliases are auto-connected the command is available directly in `$PATH` (e.g. `cqlsh`, `cassandra-nodetool status`). Aliases are granted by the Snap Store, so for a locally built snap you either invoke the app explicitly:
+Each of these is a snap app with a matching alias, so once the aliases are auto-connected the command is available directly in `$PATH` (e.g. `cqlsh`, `nodetool status`). Aliases are granted by the Snap Store, so for a locally built snap you either invoke the app explicitly:
 
 ```bash
-sudo snap run cassandra.cassandra-nodetool status
+sudo snap run cassandra.nodetool status
 ```
 
 or create the aliases yourself:
 
 ```bash
-sudo snap alias cassandra.cassandra-nodetool cassandra-nodetool
+sudo snap alias cassandra.nodetool nodetool
 sudo snap alias cassandra.cqlsh cqlsh
 ```
 
@@ -107,7 +107,7 @@ The JRE's `keytool` is also exposed, as `cassandra.keytool`, for managing TLS ke
 
 ### Configuration
 
-Cassandra is configured through `/var/snap/cassandra/current/etc/cassandra/cassandra.yaml`. There are two ways to set it.
+Cassandra is configured through `/var/snap/cassandra/common/etc/cassandra/cassandra.yaml`. There are two ways to set it.
 
 **1. Snap options.** Common keys are settable with `snap set`:
 
@@ -145,7 +145,7 @@ error: cannot perform the following tasks:
 - Run configure hook of "cassandra" snap (run hook "configure": cannot apply the
   'cluster-name' option: cluster_name is set to 'Edited By Hand' in cassandra.yaml
   a value edited by hand takes precedence; to hand the key back to 'snap set',
-  remove that edit from /var/snap/cassandra/current/etc/cassandra/cassandra.yaml)
+  remove that edit from /var/snap/cassandra/common/etc/cassandra/cassandra.yaml)
 ```
 
 ### Configuration log
@@ -166,12 +166,12 @@ The log accumulates across installs, refreshes and every `snap set`.
 
 ### RAM
 
-Initially, a single Cassandra instance will use slightly more than a half of the RAM available to the system. To limit the RAM usage (for example, prior running several Cassandra instances simultaneously on single machine) you can set `MAX_HEAP_SIZE` and `HEAP_NEWSIZE` environment variables globally in `/etc/environment` file or specifically in the `/var/snap/cassandra/current/etc/cassandra/cassandra-env.sh` file. Note that `HEAP_NEWSIZE` should be the half of a size of the `MAX_HEAP_SIZE`. Official minimal values are `MAX_HEAP_SIZE="1024M"` and `HEAP_NEWSIZE="512M"`.
+Initially, a single Cassandra instance will use slightly more than a half of the RAM available to the system. To limit the RAM usage (for example, prior running several Cassandra instances simultaneously on single machine) you can set `MAX_HEAP_SIZE` and `HEAP_NEWSIZE` environment variables globally in `/etc/environment` file or specifically in the `/var/snap/cassandra/common/etc/cassandra/cassandra-env.sh` file. Note that `HEAP_NEWSIZE` should be the half of a size of the `MAX_HEAP_SIZE`. Official minimal values are `MAX_HEAP_SIZE="1024M"` and `HEAP_NEWSIZE="512M"`.
 
 ### Single Node Deployment Example
 
 1. Start a Cassandra daemon: `sudo snap start cassandra.server`.
-2. After a while, you will be able to retrieve a cluster status via `sudo snap run cassandra.cassandra-nodetool status`.
+2. After a while, you will be able to retrieve a cluster status via `sudo snap run cassandra.nodetool status`.
 
   ```
   Datacenter: datacenter1
@@ -217,7 +217,7 @@ In this example, the next 3 LXC containers will be used:
 - c2: `10.44.178.247`
 - c3: `10.44.178.81`
 
-1. Setup the required parameters in `/var/snap/cassandra/current/etc/cassandra/cassandra.yaml` on first machine:
+1. Setup the required parameters in `/var/snap/cassandra/common/etc/cassandra/cassandra.yaml` on first machine:
 
   ```yaml
   seed_provider:
@@ -230,7 +230,7 @@ In this example, the next 3 LXC containers will be used:
   > [!NOTE]
   > You should bind Cassandra node to the public IP of the machine in order to make service accessible and also explicitly specify it as seed node.
 
-2. Start and wait for Cassandra to initialize the cluster on first machine: `sudo snap start cassandra.server` & `sudo snap run cassandra.cassandra-nodetool status`.
+2. Start and wait for Cassandra to initialize the cluster on first machine: `sudo snap start cassandra.server` & `sudo snap run cassandra.nodetool status`.
 
   ```
   Datacenter: datacenter1

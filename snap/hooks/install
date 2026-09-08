@@ -41,7 +41,7 @@ function set_base_config_props () {
 create_file_structure
 set_base_config_props
 
-declare -a folders=("${SNAP_DATA}")
+declare -a folders=("${SNAP_COMMON}")
 for f in "${folders[@]}"; do
     chgrp root "${f}/"*
 done

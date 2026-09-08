@@ -52,7 +52,7 @@ def test_nodetool_status():
 
     try:
         output = subprocess.check_output(
-            ['sudo', 'snap', 'run', f'{SNAP}.cassandra-nodetool', 'status'],
+            ['sudo', 'snap', 'run', f'{SNAP}.nodetool', 'status'],
             text=True,
             stderr=subprocess.STDOUT
         )

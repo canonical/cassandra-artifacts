@@ -15,7 +15,7 @@ source "${SNAP}"/opt/shared/bin/set-conf.sh
 
 CONF_FILE="${CASSANDRA_CONF}/cassandra.yaml"
 DEFAULT_CONF_FILE="${SNAP}/etc/cassandra/cassandra.yaml"
-RENDERED_STATE_FILE="${SNAP_DATA}/ops/rendered-config.yaml"
+RENDERED_STATE_FILE="${SNAP_COMMON}/ops/rendered-config.yaml"
 LOG_FILE="${SNAP_COMMON}/ops/snap/logs/hook-configure.log"
 
 # Snap option -> cassandra.yaml key path. snap options can not contain underscore.

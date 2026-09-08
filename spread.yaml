@@ -43,7 +43,7 @@ suites:
       # An empty node takes a while to initialize the cluster before it reports
       # itself Up/Normal, and the tests need a node that answers CQL.
       for _ in $(seq 60); do
-          if snap run cassandra.cassandra-nodetool status | grep -q "UN"; then
+          if snap run cassandra.nodetool status | grep -q "UN"; then
               ready=1
               break
           fi

@@ -45,72 +45,11 @@ jobs:
     name: Build snap
     uses: canonical/data-platform-workflows/.github/workflows/build_snap.yaml@v50.2.0
 
-  test:
+  test-snap:
     name: Test Snap
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
     needs:
       - lint
       - build
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install required dependencies
-        run: |
-          sudo snap install yq
-          pipx install rust-just
-          pipx install poetry
-
-      - name: Download snap package(s)
-        uses: actions/download-artifact@v4
-        with:
-          pattern: ${{ needs.build.outputs.artifact-prefix }}-*
-          merge-multiple: true
-
-      - name: Install snap file
-        run: |
-          version="$(yq .version < snap/snapcraft.yaml)"
-          sudo snap install "cassandra_${version}_amd64.snap" --dangerous
-
-      - name: Connect required interfaces
-        run: |
-          just connect-interfaces
-          just sysctl-tuning
-
-      - name: Setup and Start Cassandra
-        run: |
-          sudo snap start cassandra.server
-          until sudo snap run cassandra.cassandra-nodetool status | grep -q "UN"; do
-              echo "Waiting for Cassandra to be ready..."
-              sleep 20s
-          done
-
-      - name: Ensure the cluster is reachable and node created via tests
-        run: just smoke
-
-      - name: Ensure configuration options are applied
-        run: just config
-
-      - name: Upgrade snap
-        run: |
-          version="$(yq .version < snap/snapcraft.yaml)"
-          sudo snap install "cassandra_${version}_amd64.snap" --dangerous
-
-          if [ -d /var/snap/cassandra/x2 ]; then
-              echo "Snap upgraded."
-          else
-              echo "Snap upgrade check failed: x2 revision directory not found."
-              exit 1
-          fi
-
-          sudo snap start cassandra.server
-          until sudo snap run cassandra.cassandra-nodetool status | grep -q "UN"; do
-              echo "Waiting for Cassandra to be ready..."
-              sleep 20s
-          done
-
-      - name: Ensure the cluster is reachable and node created after upgrade
-        run: just smoke
+    uses: ./.github/workflows/test-snap.yaml
+    with:
+      artifact-prefix: ${{ needs.build.outputs.artifact-prefix }}

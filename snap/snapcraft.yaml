@@ -43,7 +43,7 @@ hooks:
 environment:
   JAVA_HOME: ${SNAP}/usr/lib/jvm/java-slim
   CASSANDRA_HOME: ${SNAP}/opt/cassandra
-  CASSANDRA_CONF: ${SNAP_DATA}/etc/cassandra
+  CASSANDRA_CONF: ${SNAP_COMMON}/etc/cassandra
   CASSANDRA_LOG_DIR: ${SNAP_COMMON}/var/log/cassandra
   PATH: ${SNAP}/opt/cassandra/bin:${JAVA_HOME}/bin:${SNAP}/usr/bin:$PATH
 
@@ -75,20 +75,20 @@ apps:
     environment:
       bin: cqlsh
 
-  cassandra-debug-cql:
+  debug-cql:
     command: opt/cassandra/bin/bin-wrapper.sh
     aliases:
-      - cassandra-debug-cql
+      - debug-cql
     plugs:
       - network
       - network-bind
     environment:
       bin_script: debug-cql
 
-  cassandra-nodetool:
+  nodetool:
     command: opt/cassandra/bin/bin-wrapper.sh
     aliases:
-      - cassandra-nodetool
+      - nodetool
     plugs:
       - network
       - network-bind
@@ -98,10 +98,10 @@ apps:
     environment:
       bin_script: nodetool
 
-  cassandra-sstableloader:
+  sstableloader:
     command: opt/cassandra/bin/bin-wrapper.sh
     aliases:
-      - cassandra-sstableloader
+      - sstableloader
     plugs:
       - network
       - network-bind
@@ -111,37 +111,37 @@ apps:
 
   # The remaining sstable tools operate offline on the local SSTables, so they
   # need no network access.
-  cassandra-sstablescrub:
+  sstablescrub:
     command: opt/cassandra/bin/bin-wrapper.sh
     aliases:
-      - cassandra-sstablescrub
+      - sstablescrub
     plugs:
       - mount-observe
     environment:
       bin_script: sstablescrub
 
-  cassandra-sstableupgrade:
+  sstableupgrade:
     command: opt/cassandra/bin/bin-wrapper.sh
     aliases:
-      - cassandra-sstableupgrade
+      - sstableupgrade
     plugs:
       - mount-observe
     environment:
       bin_script: sstableupgrade
 
-  cassandra-sstableutil:
+  sstableutil:
     command: opt/cassandra/bin/bin-wrapper.sh
     aliases:
-      - cassandra-sstableutil
+      - sstableutil
     plugs:
       - mount-observe
     environment:
       bin_script: sstableutil
 
-  cassandra-sstableverify:
+  sstableverify:
     command: opt/cassandra/bin/bin-wrapper.sh
     aliases:
-      - cassandra-sstableverify
+      - sstableverify
     plugs:
       - mount-observe
     environment:
