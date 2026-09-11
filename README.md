@@ -49,7 +49,14 @@ The suites can also be run directly against a snap installed on this machine —
 sudo snap install cassandra*.snap --dangerous
 ```
 
-The daemon refuses to start until the `process-control`, `system-observe` and `mount-observe` interfaces are connected, rather than starting in a degraded state. Those three and `hardware-observe` are connected by `just connect-interfaces`, or by hand:
+The daemon refuses to start until the `process-control`, `system-observe` and `mount-observe` interfaces are connected, rather than starting in a degraded state. Each has a job:
+
+- `process-control` — lets Cassandra stop its own process when it runs out of memory, instead of carrying on in a broken state.
+- `system-observe` — lets Cassandra check two kernel settings it cares about, the memory-mapping limit (`vm.max_map_count`) and the swap setting (`vm.swappiness`), and warn when they are lower than it recommends.
+- `mount-observe` — lets Cassandra see how the machine's disks are laid out, so it can tell which data folders share a disk and spread the load across them.
+- `hardware-observe` — lets Cassandra see how much CPU and memory the machine has, which it uses to pick a sensible heap size.
+
+Those three and `hardware-observe` are connected by `just connect-interfaces`, or by hand:
 
 ```bash
 sudo snap connect cassandra:process-control
@@ -62,7 +69,7 @@ To start Cassandra: `sudo snap start cassandra.server`
 
 ### Host tuning
 
-A strictly confined snap cannot change host `sysctl` settings, so the two Cassandra asks for have to be set on the host. `just sysctl-tuning` sets them for the running kernel:
+A strictly confined snap cannot change host `sysctl` settings, so the two Cassandra asks for have to be set on the host. To set them for the running kernel:
 
 ```bash
 sudo sysctl -w vm.max_map_count=1048575

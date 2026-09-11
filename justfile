@@ -26,13 +26,6 @@ connect-interfaces:
     sudo snap connect cassandra:mount-observe
     sudo snap connect cassandra:hardware-observe
 
-# See: https://docs.datastax.com/en/cassandra-oss/3.0/cassandra/install/installRecommendSettings.html#Setuserresourcelimits
-# Apply the recommended sysctl settings to the running kernel
-sysctl-tuning:
-    @echo "Applying recommended sysctl settings for Cassandra..."
-    sudo sysctl -w vm.max_map_count=1048575
-    sudo sysctl -w vm.swappiness=0
-
 # Installed as dependencies rather than inside each recipe, so that a run asking
 # for more than one - "just config smoke" - installs once.
 [private]

@@ -36,7 +36,9 @@ suites:
 
       cd "$PROJECT_PATH"
       just connect-interfaces
-      just sysctl-tuning
+
+      sysctl -w vm.max_map_count=1048575
+      sysctl -w vm.swappiness=0
 
       snap start cassandra.server
 
