@@ -1,0 +1,82 @@
+name: Test snap
+
+on:
+  # The packed snap is an input rather than something this workflow builds:
+  # call it from a workflow that has already run canonical/data-platform-
+  # workflows' build_snap.yaml, and pass the prefix its artifacts were
+  # uploaded under.
+  workflow_call:
+    inputs:
+      artifact-prefix:
+        description: Prefix of the artifact(s) holding the packed snap
+        type: string
+        default: packed-snap
+
+jobs:
+  test-snap:
+    name: Snap smoke tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install required dependencies
+        run: |
+          sudo snap install yq
+          pipx install rust-just
+          pipx install poetry
+
+      - name: Download snap package(s)
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ${{ inputs.artifact-prefix }}-*
+          merge-multiple: true
+
+      - name: Install snap file
+        run: |
+          version="$(yq .version < snap/snapcraft.yaml)"
+          sudo snap install "cassandra_${version}_amd64.snap" --dangerous
+
+      - name: Connect required interfaces
+        run: |
+          just connect-interfaces
+          sudo sysctl -w vm.max_map_count=1048575
+          sudo sysctl -w vm.swappiness=0
+
+      - name: Setup and Start Cassandra
+        run: |
+          sudo snap start cassandra.server
+          until sudo snap run cassandra.nodetool status | grep -q "UN"; do
+              echo "Waiting for Cassandra to be ready..."
+              sleep 20s
+          done
+
+      - name: Ensure the cluster is reachable and node created via tests
+        run: just smoke
+
+      - name: Ensure configuration options are applied
+        run: just config
+
+      - name: Upgrade snap
+        run: |
+          version="$(yq .version < snap/snapcraft.yaml)"
+          sudo snap install "cassandra_${version}_amd64.snap" --dangerous
+
+          if [ -d /var/snap/cassandra/x2 ]; then
+              echo "Snap upgraded."
+          else
+              echo "Snap upgrade check failed: x2 revision directory not found."
+              exit 1
+          fi
+
+          sudo snap start cassandra.server
+          until sudo snap run cassandra.nodetool status | grep -q "UN"; do
+              echo "Waiting for Cassandra to be ready..."
+              sleep 20s
+          done
+
+      - name: Ensure the cluster is reachable and node created after upgrade
+        run: just smoke

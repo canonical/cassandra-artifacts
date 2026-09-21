@@ -1,0 +1,10 @@
+parts
+prime
+stage
+snap/.snapcraft
+*.snap
+__pycache__/
+.pytest_cache/
+.tox/
+# left behind by "snapcraft test" when a run is interrupted
+.craft-spread-*/

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+set -eu
+
+
+source "${SNAP}"/opt/shared/bin/render-config.sh
+
+# Runs on install, on refresh and on every "snap set". The install hook is what
+# seeds ${CASSANDRA_CONF}, so there is nothing to render before it has run.
+if [ ! -f "${CONF_FILE}" ]; then
+    exit 0
+fi
+
+ensure_state_file
+
+# Both validations run before anything is written, so a rejected "snap set"
+# leaves cassandra.yaml as it was.
+reject_unsupported_options
+reject_blocked_options
+
+render_config

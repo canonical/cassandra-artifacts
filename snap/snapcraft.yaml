@@ -1,0 +1,273 @@
+name: cassandra
+base: core26
+
+version: 5.0.9
+
+summary: Snap for Apache Cassandra – a distributed NoSQL database
+description: |
+  This snap provides Apache Cassandra, a highly scalable, high-performance
+  distributed database.
+
+grade: stable
+confinement: strict
+
+platforms:
+  amd64:
+
+title: Apache Cassandra
+website: https://github.com/apache/cassandra
+license: Apache-2.0
+
+system-usernames:
+  _daemon_: shared
+
+slots:
+  logs:
+    interface: content
+    source:
+      read:
+        - $SNAP_COMMON/var/log/cassandra
+
+hooks:
+  install:
+    plugs:
+      - network
+      - network-bind
+    environment:
+      CASSANDRA_HINTS_DIR: ${SNAP_COMMON}/var/lib/cassandra/hints
+      CASSANDRA_DATA_DIR: ${SNAP_COMMON}/var/lib/cassandra/data
+      CASSANDRA_COMMIT_LOG_DIR: ${SNAP_COMMON}/var/lib/cassandra/commitlog
+      CASSANDRA_SAVED_CACHES_DIR: ${SNAP_COMMON}/var/lib/cassandra/saved_caches
+      CASSANDRA_CDC_DIR: ${SNAP_COMMON}/var/lib/cassandra/cdc_raw
+
+environment:
+  JAVA_HOME: ${SNAP}/usr/lib/jvm/java-slim
+  CASSANDRA_HOME: ${SNAP}/opt/cassandra
+  CASSANDRA_CONF: ${SNAP_COMMON}/etc/cassandra
+  CASSANDRA_LOG_DIR: ${SNAP_COMMON}/var/log/cassandra
+  PATH: ${SNAP}/opt/cassandra/bin:${JAVA_HOME}/bin:${SNAP}/usr/bin:$PATH
+
+apps:
+  # bin/cassandra and bin/stop-server are not exposed as apps: the daemon owns
+  # the lifecycle of both (snap start/stop cassandra.server).
+  server:
+    daemon: simple
+    command: opt/cassandra/bin/start-wrapper.sh
+    install-mode: disable
+    restart-condition: never
+    plugs:
+      - network
+      - network-bind
+      - hardware-observe
+      - process-control
+      - system-observe
+      - mount-observe
+
+  # Every remaining upstream bin/ script is exposed as an app, aliased so that
+  # the command works verbatim in $PATH once aliases are auto-connected.
+  cqlsh:
+    command: opt/cqlsh/bin/python-wrapper.sh
+    aliases:
+      - cqlsh
+    plugs:
+      - network
+      - network-bind
+    environment:
+      bin: cqlsh
+
+  debug-cql:
+    command: opt/cassandra/bin/bin-wrapper.sh
+    aliases:
+      - debug-cql
+    plugs:
+      - network
+      - network-bind
+    environment:
+      bin_script: debug-cql
+
+  nodetool:
+    command: opt/cassandra/bin/bin-wrapper.sh
+    aliases:
+      - nodetool
+    plugs:
+      - network
+      - network-bind
+      - process-control
+      - system-observe
+      - mount-observe
+    environment:
+      bin_script: nodetool
+
+  sstableloader:
+    command: opt/cassandra/bin/bin-wrapper.sh
+    aliases:
+      - sstableloader
+    plugs:
+      - network
+      - network-bind
+      - mount-observe
+    environment:
+      bin_script: sstableloader
+
+  # The remaining sstable tools operate offline on the local SSTables, so they
+  # need no network access.
+  sstablescrub:
+    command: opt/cassandra/bin/bin-wrapper.sh
+    aliases:
+      - sstablescrub
+    plugs:
+      - mount-observe
+    environment:
+      bin_script: sstablescrub
+
+  sstableupgrade:
+    command: opt/cassandra/bin/bin-wrapper.sh
+    aliases:
+      - sstableupgrade
+    plugs:
+      - mount-observe
+    environment:
+      bin_script: sstableupgrade
+
+  sstableutil:
+    command: opt/cassandra/bin/bin-wrapper.sh
+    aliases:
+      - sstableutil
+    plugs:
+      - mount-observe
+    environment:
+      bin_script: sstableutil
+
+  sstableverify:
+    command: opt/cassandra/bin/bin-wrapper.sh
+    aliases:
+      - sstableverify
+    plugs:
+      - mount-observe
+    environment:
+      bin_script: sstableverify
+
+  keytool:
+    command: usr/lib/jvm/java-slim/bin/keytool
+    plugs:
+      - mount-observe
+
+parts:
+  dependencies:
+    plugin: nil
+    stage-snaps:
+      - yq
+    stage-packages:
+      # setpriv, which every wrapper uses to drop to _daemon_
+      - util-linux
+      # "free", which cassandra-env.sh sizes the heap with
+      - procps
+      # both looked up by name in bin/cassandra
+      - libjemalloc2
+      - numactl
+      - libsnappy1v5
+      - libzstd1
+      - libev4t64
+
+  java-runtime:
+    plugin: nil
+    build-packages:
+      - openjdk-17-jdk-headless
+      - ca-certificates-java
+    override-build: |
+      # A minimal runtime holding only the modules Cassandra needs.
+      # see "JRE hardening" in SECURITY.md.
+      modules="java.base,java.compiler,java.desktop,java.instrument"
+      modules="${modules},java.management,java.management.rmi,java.naming"
+      modules="${modules},java.rmi,java.sql,jdk.attach,jdk.crypto.ec"
+      modules="${modules},jdk.incubator.vector,jdk.jfr,jdk.management"
+      modules="${modules},jdk.management.agent,jdk.naming.rmi,jdk.unsupported"
+
+      jlink \
+        --add-modules "${modules}" \
+        --strip-debug \
+        --no-man-pages \
+        --no-header-files \
+        --compress=2 \
+        --output "${CRAFT_PART_INSTALL}/usr/lib/jvm/java-slim"
+
+      # jlink does not follow the JDK's lib/security/cacerts symlink, so replace
+      # the bundle it generated with the distro trust store. See "Trust store"
+      # in SECURITY.md.
+      update-ca-certificates -f
+      test -s /etc/ssl/certs/java/cacerts
+      cp /etc/ssl/certs/java/cacerts \
+        "${CRAFT_PART_INSTALL}/usr/lib/jvm/java-slim/lib/security/cacerts"
+    stage:
+      - usr/lib/jvm/java-slim
+
+  cqlsh:
+    plugin: python
+    source: snap/local/opt/cqlsh
+    python-packages:
+      - cqlsh
+    # core26 ships the python standard library but no interpreter, unlike core24,
+    # so the snap has to carry its own. The plugin looks for one in the part's
+    # payload and fails the build when it finds none; staging it here rather than
+    # in "dependencies" puts it in this part's install directory, which the
+    # plugin searches before any other part has been staged, and bin/python3
+    # ends up a relative symlink into usr/bin.
+    #
+    # python3-venv comes along because the staged interpreter is the one that
+    # builds the venv - snapcraft puts the payload's usr/bin ahead of the build
+    # environment's own python - and venv needs its ensurepip. That also makes
+    # the venv point at the interpreter and the library the snap ships rather
+    # than at the ones on the build host.
+    stage-packages:
+      - python3
+      - python3-venv
+
+  cassandra:
+    plugin: nil
+    build-packages:
+      - curl
+      # for curl to verify the TLS certificate of the download below
+      - ca-certificates
+    override-build: |
+      version="$(craftctl get version)"
+      patch="ubuntu0"
+      archive="cassandra-${version}-${patch}-linux-x64.tar.gz"
+      url="https://github.com/canonical/central-uploader/releases/download/"\
+      "apache-cassandra-${version}-${patch}/"\
+      "apache-cassandra-${version}-${patch}-20260821061606-bin.tar.gz"
+      curl -L -o "${archive}" "${url}"
+      tar -xzvf "${archive}" -C "${CRAFT_PART_INSTALL}/" --strip-components=1
+
+      mkdir -p "${CRAFT_PART_INSTALL}/opt/cassandra"
+      mkdir -p "${CRAFT_PART_INSTALL}/etc/cassandra"
+      mv "${CRAFT_PART_INSTALL}"/conf/* "${CRAFT_PART_INSTALL}/etc/cassandra/"
+
+      declare -a resources=(bin lib tools pylib doc LICENSE.txt NOTICE.txt)
+      for res in "${resources[@]}"; do
+          mv "${CRAFT_PART_INSTALL}/${res}" \
+          "${CRAFT_PART_INSTALL}/opt/cassandra"
+
+          target="${CRAFT_PART_INSTALL}/opt/cassandra/$(basename "${res}")"
+          if [ -d "${target}" ]; then
+              chmod -R 755 "${target}"
+          elif [ -f "${target}" ]; then
+              chmod 644 "${target}"
+          fi
+      done
+
+      rm "${archive}"
+
+      # Release notes, and the policy file for upstream's own vulnerability
+      # scanner. The glob is left outside the quotes so that it is expanded:
+      # CASSANDRA-14092.txt is the one file it matches today.
+      rm -rf "${CRAFT_PART_INSTALL}/CHANGES.txt" \
+             "${CRAFT_PART_INSTALL}/NEWS.txt" \
+             "${CRAFT_PART_INSTALL}/.snyk" \
+             "${CRAFT_PART_INSTALL}"/CASSANDRA-*.txt
+
+      # left empty by moving conf/ to etc/cassandra/ above
+      rmdir "${CRAFT_PART_INSTALL}/conf"
+
+  wrapper:
+    plugin: dump
+    source: snap/local
