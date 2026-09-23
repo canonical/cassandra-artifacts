@@ -3,6 +3,7 @@ prime
 stage
 snap/.snapcraft
 *.snap
+*.rock
 __pycache__/
 .pytest_cache/
 .tox/
