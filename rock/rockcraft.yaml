@@ -1,0 +1,198 @@
+name: cassandra
+base: ubuntu@26.04
+
+version: 5.0.9
+
+summary: Rock for Apache Cassandra – a distributed NoSQL database
+description: |
+  This rock provides Apache Cassandra, a highly scalable, high-performance
+  distributed database.
+
+  It is built from the same binaries as the cassandra snap in this repository,
+  and laid out like the official Cassandra image: the same paths and the same
+  CASSANDRA_* environment variables. It runs as the _daemon_ user.
+
+license: Apache-2.0
+
+platforms:
+  amd64:
+
+run_user: _daemon_
+
+environment:
+  JAVA_HOME: /opt/java/openjdk
+  CASSANDRA_HOME: /opt/cassandra
+  CASSANDRA_CONF: /etc/cassandra
+  LANG: C.UTF-8
+  # Pebble keeps the output of its services to itself unless it is run with
+  # "--verbose", of which this is the documented environment form. Without it
+  # "docker logs" shows Pebble's own handful of lines and nothing from the node.
+  PEBBLE_VERBOSE: "1"
+  PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/java/openjdk/bin:/opt/cassandra/bin
+
+services:
+  cassandra:
+    override: replace
+    startup: enabled
+    command: /usr/local/bin/cassandra-start.sh
+    working-dir: /var/lib/cassandra
+    on-success: shutdown
+    on-failure: shutdown
+
+checks:
+  cql:
+    override: replace
+    level: ready
+    period: 10s
+    timeout: 3s
+    threshold: 3
+    tcp:
+      port: 9042
+
+parts:
+  dependencies:
+    plugin: nil
+    stage-packages:
+      # "free", which cassandra-env.sh sizes the heap with
+      - procps
+      # "ip", which the entrypoint resolves CASSANDRA_LISTEN_ADDRESS=auto with
+      - iproute2
+      # both looked up by name in bin/cassandra
+      - libjemalloc2
+      - numactl
+      - libsnappy1v5
+      - libzstd1
+      - libev4t64
+      # for cqlsh to verify the certificate of a TLS-enabled node
+      - ca-certificates
+    override-build: |
+      craftctl default
+
+      # find_library() in bin/cassandra searches the ldconfig directories for
+      # libjemalloc and takes the highest-sorting match, which the distro
+      # package alone does not give it a stable answer for. The official image
+      # adds the same symlink for the same reason (CASSANDRA-15767).
+      mkdir -p "${CRAFT_PART_INSTALL}/usr/local/lib"
+      ln -sf "/usr/lib/${CRAFT_ARCH_TRIPLET_BUILD_FOR}/libjemalloc.so.2" \
+        "${CRAFT_PART_INSTALL}/usr/local/lib/libjemalloc.so"
+
+  java-runtime:
+    plugin: nil
+    build-packages:
+      - openjdk-17-jdk-headless
+      - ca-certificates-java
+    override-build: |
+      # A minimal runtime holding only the modules Cassandra needs.
+      # see "JRE hardening" in SECURITY.md.
+      modules="java.base,java.compiler,java.desktop,java.instrument"
+      modules="${modules},java.management,java.management.rmi,java.naming"
+      modules="${modules},java.rmi,java.sql,jdk.attach,jdk.crypto.ec"
+      modules="${modules},jdk.incubator.vector,jdk.jfr,jdk.management"
+      modules="${modules},jdk.management.agent,jdk.naming.rmi,jdk.unsupported"
+
+      # /opt/java/openjdk is where the official image keeps its runtime, and
+      # what JAVA_HOME points at above.
+      jlink \
+        --add-modules "${modules}" \
+        --strip-debug \
+        --no-man-pages \
+        --no-header-files \
+        --compress=2 \
+        --output "${CRAFT_PART_INSTALL}/opt/java/openjdk"
+
+      # jlink does not follow the JDK's lib/security/cacerts symlink, so replace
+      # the bundle it generated with the distro trust store. See "Trust store"
+      # in SECURITY.md.
+      update-ca-certificates -f
+      test -s /etc/ssl/certs/java/cacerts
+      cp /etc/ssl/certs/java/cacerts \
+        "${CRAFT_PART_INSTALL}/opt/java/openjdk/lib/security/cacerts"
+    stage:
+      - opt/java/openjdk
+
+  cqlsh:
+    plugin: python
+    source: local
+    python-packages:
+      - cqlsh
+    stage-packages:
+      - python3
+      - python3-venv
+
+  cassandra:
+    plugin: nil
+    build-packages:
+      - curl
+      - ca-certificates
+    override-build: |
+      version="$(craftctl get version)"
+      patch="ubuntu0"
+      archive="cassandra-${version}-${patch}-linux-x64.tar.gz"
+      url="https://github.com/canonical/central-uploader/releases/download/"\
+      "apache-cassandra-${version}-${patch}/"\
+      "apache-cassandra-${version}-${patch}-20260821061606-bin.tar.gz"
+      curl -L -o "${archive}" "${url}"
+      tar -xzvf "${archive}" -C "${CRAFT_PART_INSTALL}/" --strip-components=1
+
+      mkdir -p "${CRAFT_PART_INSTALL}/opt/cassandra"
+      mkdir -p "${CRAFT_PART_INSTALL}/etc/cassandra"
+      mv "${CRAFT_PART_INSTALL}"/conf/* "${CRAFT_PART_INSTALL}/etc/cassandra/"
+
+      declare -a resources=(bin lib tools pylib doc LICENSE.txt NOTICE.txt)
+      for res in "${resources[@]}"; do
+          mv "${CRAFT_PART_INSTALL}/${res}" \
+          "${CRAFT_PART_INSTALL}/opt/cassandra"
+
+          target="${CRAFT_PART_INSTALL}/opt/cassandra/$(basename "${res}")"
+          if [ -d "${target}" ]; then
+              chmod -R 755 "${target}"
+          elif [ -f "${target}" ]; then
+              chmod 644 "${target}"
+          fi
+      done
+
+      rm "${archive}"
+
+      # Release notes, and the policy file for upstream's own vulnerability
+      # scanner. The glob is left outside the quotes so that it is expanded:
+      # CASSANDRA-14092.txt is the one file it matches today.
+      rm -rf "${CRAFT_PART_INSTALL}/CHANGES.txt" \
+             "${CRAFT_PART_INSTALL}/NEWS.txt" \
+             "${CRAFT_PART_INSTALL}/.snyk" \
+             "${CRAFT_PART_INSTALL}"/CASSANDRA-*.txt
+
+      # left empty by moving conf/ to etc/cassandra/ above
+      rmdir "${CRAFT_PART_INSTALL}/conf"
+
+      # Cassandra resolves its data, log and configuration directories relative
+      # to CASSANDRA_HOME unless cassandra.yaml says otherwise. The official
+      # image points those three at the FHS locations with symlinks instead of
+      # editing the file, which leaves every path in cassandra.yaml as upstream
+      # ships it.
+      mkdir -p "${CRAFT_PART_INSTALL}/var/lib/cassandra" \
+               "${CRAFT_PART_INSTALL}/var/log/cassandra"
+      ln -sT /etc/cassandra "${CRAFT_PART_INSTALL}/opt/cassandra/conf"
+      ln -sT /var/lib/cassandra "${CRAFT_PART_INSTALL}/opt/cassandra/data"
+      ln -sT /var/log/cassandra "${CRAFT_PART_INSTALL}/opt/cassandra/logs"
+    permissions:
+      - path: var/lib/cassandra
+        owner: 584792
+        group: 584792
+        mode: "750"
+      - path: var/log/cassandra
+        owner: 584792
+        group: 584792
+        mode: "750"
+      # The start script rewrites cassandra.yaml and cassandra-rackdc.properties
+      # in place, so _daemon_ has to own the config directory too.
+      - path: etc/cassandra
+        owner: 584792
+        group: 584792
+        mode: "755"
+      - path: etc/cassandra/*
+        owner: 584792
+        group: 584792
+
+  local-files:
+    plugin: dump
+    source: local

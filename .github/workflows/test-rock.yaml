@@ -1,0 +1,165 @@
+name: Test rock
+
+on:
+  workflow_call:
+    inputs:
+      artifact-prefix:
+        description: Prefix of the artifact(s) holding the packed rock
+        type: string
+        default: packed-rock
+
+env:
+
+  MAX_HEAP_SIZE: 1024M
+  HEAP_NEWSIZE: 512M
+
+jobs:
+  test-rock:
+    name: Rock smoke tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # for rockcraft.skopeo, which the rock is handed to docker with
+      - name: Install rockcraft
+        run: sudo snap install rockcraft --classic
+
+      - name: Download rock package(s)
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ${{ inputs.artifact-prefix }}-*
+          merge-multiple: true
+
+      - name: Load the rock into the docker daemon
+        run: |
+          rock="$(find . -name '*.rock' -print -quit)"
+          if [ -z "${rock}" ]; then
+            echo "No .rock file among the downloaded artifacts" >&2
+            exit 1
+          fi
+          echo "Loading ${rock}"
+
+          rockcraft.skopeo --insecure-policy copy \
+            "oci-archive:${rock}" docker-daemon:cassandra:test
+
+      - name: Write the readiness helper
+        run: |
+          cat > "${RUNNER_TEMP}/wait-for-nodes.sh" <<'EOF'
+          #!/usr/bin/env bash
+          # Waits for nodetool on <container> to report <count> nodes up and
+          # normal. Deliberately without "set -e": "grep -c" exits non-zero
+          # while the count is still zero.
+          set -uo pipefail
+          container="$1"
+          count="${2:-1}"
+
+          for _ in $(seq 1 60); do
+            up="$(docker exec "${container}" nodetool status 2>/dev/null | grep -c '^UN')"
+            if [ "${up}" -ge "${count}" ]; then
+              docker exec "${container}" nodetool status
+              exit 0
+            fi
+            echo "Waiting for ${count} node(s) to be up and normal, ${up} so far..."
+            sleep 10
+          done
+
+          echo "Timed out waiting for ${count} node(s)" >&2
+          exit 1
+          EOF
+          chmod +x "${RUNNER_TEMP}/wait-for-nodes.sh"
+
+      - name: Start a single node
+        run: |
+          docker run -d --name cassandra \
+            -p 9042:9042 \
+            -v cassandra-data:/var/lib/cassandra \
+            -e MAX_HEAP_SIZE -e HEAP_NEWSIZE \
+            -e JVM_EXTRA_OPTS=-Dcassandra.available_processors=2 \
+            cassandra:test
+
+      - name: Wait for the node to be up and normal
+        run: bash "${RUNNER_TEMP}/wait-for-nodes.sh" cassandra
+
+      - name: Write and read through cqlsh
+        run: |
+          sleep 30
+          docker exec cassandra cqlsh -e "
+            CREATE KEYSPACE test WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
+            CREATE TABLE test.t1 (message text PRIMARY KEY);
+            INSERT INTO test.t1 (message) VALUES ('hello');"
+
+          result="$(docker exec cassandra cqlsh -e 'SELECT * FROM test.t1;')"
+          echo "${result}"
+          echo "${result}" | grep -q hello
+
+      - name: Check the node's own output reaches docker logs
+        run: |
+          docker logs cassandra | grep -q 'Startup complete'
+
+          # Check that the JVM_EXTRA_OPTS on the
+          # "docker run" line above reached Cassandra
+          docker logs cassandra | grep -q 'cassandra.available_processors=2'
+
+      - name: Remove the single node
+        run: |
+          docker rm --force cassandra
+          docker volume rm cassandra-data
+
+      - name: Start the seed of a two node cluster
+        run: |
+          docker network create cassandra-net
+          docker run -d --name cassandra1 --network cassandra-net \
+            -e CASSANDRA_CLUSTER_NAME="Prod Cluster" \
+            -e MAX_HEAP_SIZE -e HEAP_NEWSIZE \
+            cassandra:test
+
+      # A node that joins while the seed is still initializing gives up rather
+      # than retrying, so the second node waits for this.
+      - name: Wait for the seed to be up and normal
+        run: bash "${RUNNER_TEMP}/wait-for-nodes.sh" cassandra1
+
+      - name: Join a second node
+        run: |
+          docker run -d --name cassandra2 --network cassandra-net \
+            -e CASSANDRA_CLUSTER_NAME="Prod Cluster" \
+            -e CASSANDRA_SEEDS=cassandra1 \
+            -e MAX_HEAP_SIZE -e HEAP_NEWSIZE \
+            cassandra:test
+
+      - name: Wait for both nodes to be up and normal
+        run: bash "${RUNNER_TEMP}/wait-for-nodes.sh" cassandra1 2
+
+      - name: Check CASSANDRA_CLUSTER_NAME was applied
+        run: docker exec cassandra1 nodetool describecluster | grep 'Prod Cluster'
+
+      - name: Write on one node and read it back on the other
+        run: |
+          sleep 30
+          docker exec cassandra2 cqlsh -e "
+            CREATE KEYSPACE multitest WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 2};
+            CREATE TABLE multitest.ttt (message text PRIMARY KEY);
+            INSERT INTO multitest.ttt (message) VALUES ('hello');"
+
+          # The schema takes a moment to reach the other node. Reading at
+          # CONSISTENCY ALL there needs both replicas, so a row that comes back
+          # is a row that was replicated rather than one node's copy.
+          for _ in $(seq 1 12); do
+            result="$(docker exec cassandra1 cqlsh \
+              -e 'CONSISTENCY ALL; SELECT * FROM multitest.ttt;' 2>&1 || true)"
+            if echo "${result}" | grep -q hello; then
+              echo "${result}"
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "${result}" >&2
+          exit 1
+
+      - name: Dump the container logs
+        if: failure()
+        run: |
+          for container in $(docker ps --all --format '{{.Names}}'); do
+            echo "::group::docker logs ${container}"
+            docker logs "${container}" 2>&1 || true
+            echo "::endgroup::"
+          done

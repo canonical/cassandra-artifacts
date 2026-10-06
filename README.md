@@ -2,7 +2,7 @@
 
 This snap packages the Apache Cassandra database, following the layout and conventions of the upstream binary tarballs. It ships no add-on tooling — every command it exposes comes from upstream's `bin/`.
 
-This repository contains the packaging metadata for creating the Cassandra Snap. For more information on snaps, visit [snapcraft.io](https://snapcraft.io/).
+This repository contains the packaging metadata for creating the Cassandra Snap. For more information on snaps, visit [snapcraft.io](https://snapcraft.io/). The same binaries are packaged as a container image too — see [The rock](#the-rock).
 
 ## Building the snap
 
@@ -339,6 +339,85 @@ In this example, the next 3 LXC containers will be used:
 ### Exposing Client Interface
 
 While the `listen_address` parameter corresponds to node-to-node Cassandra connections, `rpc_address` parameter corresponds to the client connections (e.g. cqlsh) and is limited to localhost by default. Cassandra documentation warns about exposing of this interface, but for testing purposes it can be done by setting `rpc_address` to the public ip or `0.0.0.0`.
+
+## The rock
+
+`rock/` packages the same Cassandra binaries and the same trimmed Java runtime as an OCI image, laid out like the [official Cassandra image](https://hub.docker.com/_/cassandra): the same paths (`/opt/cassandra`, `/etc/cassandra`, `/var/lib/cassandra`, `/var/log/cassandra`) and the same `CASSANDRA_*` configuration variables. Cassandra runs as rockcraft's shared `_daemon_` user (uid and gid 584792) rather than upstream's `cassandra` user, so a data volume written by the official image, owned by uid 999, is not readable by the rock.
+
+### Build the rock
+
+```bash
+sudo snap install rockcraft --classic
+cd rock
+rockcraft pack
+```
+
+Use skopeo to load the OCI archive as a Docker image in the Docker daemon:
+
+```bash
+rockcraft.skopeo --insecure-policy copy \
+  oci-archive:cassandra_5.0.9_amd64.rock docker-daemon:cassandra:5.0.9
+```
+
+### Run the rock
+
+```bash
+docker run -d --name cassandra \
+  -p 9042:9042 \
+  -v cassandra-data:/var/lib/cassandra \
+  cassandra:5.0.9
+```
+
+By default, Cassandra listens on 7000 (node to node), 7001 (node to node over TLS), 7199 (JMX) and 9042 (CQL).
+
+Extra JVM options are passed through `JVM_EXTRA_OPTS` instead, and the upstream tools are on `PATH`:
+
+```bash
+docker run --rm -e JVM_EXTRA_OPTS=-Dcassandra.available_processors=2 cassandra:5.0.9
+docker exec cassandra nodetool status
+docker exec -it cassandra cqlsh
+```
+
+### Configure the rock
+
+The rock carries none of the snap's `snap set` machinery. Configuration is done using environment variables, under the names the official image uses, written into `cassandra.yaml` by `/usr/local/bin/cassandra-start.sh`, the `cassandra` service's command, before the node starts:
+
+| Environment variable | `cassandra.yaml` key |
+| --- | --- |
+| `CASSANDRA_BROADCAST_ADDRESS` | `broadcast_address` |
+| `CASSANDRA_BROADCAST_RPC_ADDRESS` | `broadcast_rpc_address` |
+| `CASSANDRA_CLUSTER_NAME` | `cluster_name` |
+| `CASSANDRA_ENDPOINT_SNITCH` | `endpoint_snitch` |
+| `CASSANDRA_LISTEN_ADDRESS` | `listen_address` |
+| `CASSANDRA_NUM_TOKENS` | `num_tokens` |
+| `CASSANDRA_RPC_ADDRESS` | `rpc_address` |
+| `CASSANDRA_START_RPC` | `start_rpc` |
+| `CASSANDRA_SEEDS` | `seed_provider[0].parameters[0].seeds` |
+
+`CASSANDRA_DC` and `CASSANDRA_RACK` are written to `cassandra-rackdc.properties` instead. A variable that is not set leaves the value Cassandra ships.
+
+Any key the table does not cover is set by mounting your own file over `/etc/cassandra/cassandra.yaml`. The start script rewrites the file in place instead of replacing it, so a bind mount survives.
+
+### Run a cluster
+
+To run a cluster, on a network where the containers can resolve each other by name:
+
+```bash
+docker network create cassandra-net
+
+docker run -d --name cassandra1 --network cassandra-net \
+  -e CASSANDRA_CLUSTER_NAME="Prod Cluster" \
+  cassandra:5.0.9
+
+docker run -d --name cassandra2 --network cassandra-net \
+  -e CASSANDRA_CLUSTER_NAME="Prod Cluster" \
+  -e CASSANDRA_SEEDS=cassandra1 \
+  cassandra:5.0.9
+
+docker exec cassandra1 nodetool status
+```
+
+Give the first node time to report itself `UN` before starting the second: a node that joins while the seed is still initializing gives up rather than retrying.
 
 ## License
 
