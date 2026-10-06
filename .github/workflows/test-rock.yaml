@@ -73,7 +73,8 @@ jobs:
             -p 9042:9042 \
             -v cassandra-data:/var/lib/cassandra \
             -e MAX_HEAP_SIZE -e HEAP_NEWSIZE \
-            cassandra:test -Dcassandra.available_processors=2
+            -e JVM_EXTRA_OPTS=-Dcassandra.available_processors=2 \
+            cassandra:test
 
       - name: Wait for the node to be up and normal
         run: bash "${RUNNER_TEMP}/wait-for-nodes.sh" cassandra
@@ -94,7 +95,7 @@ jobs:
         run: |
           docker logs cassandra | grep -q 'Startup complete'
 
-          # Check that the argument on the
+          # Check that the JVM_EXTRA_OPTS on the
           # "docker run" line above reached Cassandra
           docker logs cassandra | grep -q 'cassandra.available_processors=2'
 

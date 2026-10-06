@@ -9,13 +9,15 @@ description: |
   distributed database.
 
   It is built from the same binaries as the cassandra snap in this repository,
-  and laid out like the official Cassandra image: the same paths, the same
-  cassandra user, and the same CASSANDRA_* environment variables.
+  and laid out like the official Cassandra image: the same paths and the same
+  CASSANDRA_* environment variables. It runs as the _daemon_ user.
 
 license: Apache-2.0
 
 platforms:
   amd64:
+
+run_user: _daemon_
 
 environment:
   JAVA_HOME: /opt/java/openjdk
@@ -32,16 +34,10 @@ services:
   cassandra:
     override: replace
     startup: enabled
-    # The arguments in brackets become the image's CMD, so "docker run <image>"
-    # starts a node and "docker run <image> -Dsomething" reaches Cassandra.
-    command: /usr/local/bin/docker-entrypoint.sh [ cassandra -f ]
-    user: cassandra
-    group: cassandra
+    command: /usr/local/bin/cassandra-start.sh
     working-dir: /var/lib/cassandra
     on-success: shutdown
     on-failure: shutdown
-
-entrypoint-service: cassandra
 
 checks:
   cql:
@@ -54,14 +50,6 @@ checks:
       port: 9042
 
 parts:
-  # Upstream's account, with the uid and gid it uses.
-  user:
-    plugin: nil
-    overlay-script: |
-      groupadd --root "${CRAFT_OVERLAY}" -r cassandra --gid=999
-      useradd --root "${CRAFT_OVERLAY}" -r -g cassandra --uid=999 \
-        --home-dir /var/lib/cassandra --shell /bin/bash cassandra
-
   dependencies:
     plugin: nil
     stage-packages:
@@ -188,21 +176,23 @@ parts:
       ln -sT /var/log/cassandra "${CRAFT_PART_INSTALL}/opt/cassandra/logs"
     permissions:
       - path: var/lib/cassandra
-        owner: 999
-        group: 999
+        owner: 584792
+        group: 584792
         mode: "750"
       - path: var/log/cassandra
-        owner: 999
-        group: 999
+        owner: 584792
+        group: 584792
         mode: "750"
+      # The start script rewrites cassandra.yaml and cassandra-rackdc.properties
+      # in place, so _daemon_ has to own the config directory too.
       - path: etc/cassandra
-        owner: 999
-        group: 999
+        owner: 584792
+        group: 584792
         mode: "755"
       - path: etc/cassandra/*
-        owner: 999
-        group: 999
+        owner: 584792
+        group: 584792
 
-  entrypoint:
+  local-files:
     plugin: dump
     source: local
