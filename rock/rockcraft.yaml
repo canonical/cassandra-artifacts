@@ -1,5 +1,6 @@
 name: cassandra
-base: ubuntu@26.04
+base: bare
+build-base: ubuntu@26.04
 
 version: 5.0.9
 
@@ -11,8 +12,6 @@ description: |
   It is built from the same binaries as the cassandra snap in this repository,
   and laid out like the official Cassandra image: the same paths and the same
   CASSANDRA_* environment variables. It runs as the _daemon_ user.
-
-license: Apache-2.0
 
 platforms:
   amd64:
@@ -53,6 +52,22 @@ parts:
   dependencies:
     plugin: nil
     stage-packages:
+      # the bare base ships no userland, so the pebble start script, the
+      # /bin/sh bin/cassandra launcher and cassandra-env.sh need a shell and
+      # the utilities they call (awk, find/xargs, which, and the coreutils set)
+      - bash
+      - dash
+      - coreutils
+      - findutils
+      - grep
+      - sed
+      - gawk
+      - debianutils
+      # "getopt", which bin/cassandra parses its own flags with
+      - util-linux
+      # the jlinked JVM's libjvm.so (and the snappy/zstd/jemalloc libs below)
+      # link libstdc++ and libgcc_s, neither of which the bare base provides
+      - libstdc++6
       # "free", which cassandra-env.sh sizes the heap with
       - procps
       # "ip", which the entrypoint resolves CASSANDRA_LISTEN_ADDRESS=auto with
@@ -67,6 +82,12 @@ parts:
       - ca-certificates
     override-build: |
       craftctl default
+
+      # the "awk" and "sh" names are update-alternatives symlinks made by the
+      # gawk and dash postinst scripts, which do not run in a bare rock, so the
+      # start script's awk and bin/cassandra's /bin/sh shebang need them created
+      ln -sf gawk "${CRAFT_PART_INSTALL}/usr/bin/awk"
+      ln -sf dash "${CRAFT_PART_INSTALL}/usr/bin/sh"
 
       # find_library() in bin/cassandra searches the ldconfig directories for
       # libjemalloc and takes the highest-sorting match, which the distro
