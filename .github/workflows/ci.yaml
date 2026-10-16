@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install actionlint
         id: actionlint
@@ -41,15 +41,30 @@ jobs:
       - name: Run linters
         run: just lint
 
-  build:
+  build-snap:
     name: Build snap
     uses: canonical/data-platform-workflows/.github/workflows/build_snap.yaml@v50.2.0
+
+  build-rock:
+    name: Build rock
+    uses: canonical/data-platform-workflows/.github/workflows/build_rock.yaml@v50.2.0
+    with:
+      path-to-rock-directory: rock
 
   test-snap:
     name: Test Snap
     needs:
       - lint
-      - build
+      - build-snap
     uses: ./.github/workflows/test-snap.yaml
     with:
-      artifact-prefix: ${{ needs.build.outputs.artifact-prefix }}
+      artifact-prefix: ${{ needs.build-snap.outputs.artifact-prefix }}
+
+  test-rock:
+    name: Test rock
+    needs:
+      - lint
+      - build-rock
+    uses: ./.github/workflows/test-rock.yaml
+    with:
+      artifact-prefix: ${{ needs.build-rock.outputs.artifact-prefix }}-*
